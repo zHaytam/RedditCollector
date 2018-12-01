@@ -97,6 +97,15 @@ namespace Collector.Properties {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to 51.38.234.95:8080,172.94.14.56:50679.
+        /// </summary>
+        internal static string Proxies {
+            get {
+                return ResourceManager.GetString("Proxies", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to http://localhost.
         /// </summary>
         internal static string RedirectUri {

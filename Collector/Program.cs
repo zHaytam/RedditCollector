@@ -5,7 +5,6 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Collector.Models;
 using Collector.Properties;
-using EFCore.BulkExtensions;
 using RedditSharp;
 using ShellProgressBar;
 
@@ -16,32 +15,15 @@ namespace Collector
 
         #region Fields
 
-        private static List<BotWebAgent> _webAgents;
-        private static List<Reddit> _reddits;
+        private static BotWebAgent _webAgent;
+        private static Reddit _reddit;
 
         #endregion
 
-        private static void InitializeReddits()
-        {
-            string[] usernames = Resources.Usernames.Split(',');
-            string[] passwords = Resources.Passwords.Split(',');
-            string[] clientIds = Resources.ClientIDs.Split(',');
-            string[] clientSecrets = Resources.ClientSecrets.Split(',');
-
-            _webAgents = new List<BotWebAgent>(usernames.Length);
-            _reddits = new List<Reddit>(usernames.Length);
-
-            for (int i = 0; i < usernames.Length; i++)
-            {
-                _webAgents.Add(new BotWebAgent(usernames[i], passwords[i], clientIds[i], clientSecrets[i], Resources.RedirectUri));
-                _reddits.Add(new Reddit(_webAgents[i], true));
-            }
-        }
-
         private static async Task Main(string[] args)
         {
-            // Initialize reddits
-            InitializeReddits();
+            _webAgent = new BotWebAgent(Resources.Usernames.Split(',')[0], Resources.Passwords.Split(',')[0], Resources.ClientIDs.Split(',')[0], Resources.ClientSecrets.Split(',')[0], Resources.RedirectUri);
+            _reddit = new Reddit(_webAgent, false);
 
             // Collect subreddits
             // await CollectSubredditsAsync();
@@ -59,10 +41,9 @@ namespace Collector
                 // Load back users cache
                 CollectorCache.LoadUsers(db);
 
-                // Pick up where we left
-                var srs = db.Subreddits.Skip(85).ToList();
+                var srs = db.Subreddits.Skip(86).ToArray();
 
-                using (var pb = new ProgressBar(srs.Count, $"Collecting posts from {srs.Count} subreddits", new ProgressBarOptions
+                using (var pb = new ProgressBar(srs.Length, $"Collecting posts from {srs.Length} subreddits", new ProgressBarOptions
                 {
                     ForegroundColor = ConsoleColor.Yellow,
                     BackgroundColor = ConsoleColor.DarkYellow,
@@ -71,74 +52,62 @@ namespace Collector
                     EnableTaskBarProgress = true
                 }))
                 {
-                    // ReSharper disable AccessToDisposedClosure
-                    var tasks = SplitList(srs, _reddits.Count).Select((srsSublist, i) => CollectPostsAndAuthorsOfSubreddits(_reddits[i], srsSublist, db, pb)).ToArray();
-                    // ReSharper restore AccessToDisposedClosure
-
-                    await Task.WhenAll(tasks);
-                }
-            }
-        }
-
-        private static async Task CollectPostsAndAuthorsOfSubreddits(Reddit reddit, IEnumerable<Subreddit> subreddits, DatabaseContext db, ProgressBar pb)
-        {
-            foreach (var sr in subreddits)
-            {
-                // Get subreddit object
-                var subreddit = await reddit.GetSubredditAsync($"/r/{sr.Name}");
-                using (var childPb = pb.Spawn(1000, $"Collecting posts from /r/{sr.Name}", new ProgressBarOptions
-                {
-                    ForegroundColor = ConsoleColor.Green,
-                    BackgroundColor = ConsoleColor.DarkGreen,
-                    ProgressCharacter = '─'
-                }))
-                {
-                    // ReSharper disable AccessToDisposedClosure
-                    int collected = 0;
-
-                    // For each post in the subreddit
-                    await subreddit.GetPosts().ForEachAsync(p =>
+                    // For each saved subreddit
+                    foreach (var sr in srs)
                     {
-                        // Get author user
-                        var author = CollectorCache.GetUser(reddit, p.AuthorName).Result;
-                        if (author == null)
-                            return;
-
-                        // Create post model with the author
-                        var post = new Post
+                        // Get subreddit object
+                        var subreddit = await _reddit.GetSubredditAsync($"/r/{sr.Name}");
+                        using (var childPb = pb.Spawn(1000, $"Collecting posts from /r/{sr.Name}", CollectorCache.NewSpawnOptions()))
                         {
-                            PostId = p.Id,
-                            Author = author,
-                            Title = p.Title,
-                            SelfText = p.SelfText,
-                            CommentCount = p.CommentCount,
-                            Url = p.Url?.OriginalString,
-                            ThumbnailUrl = p.Thumbnail?.OriginalString,
-                            Nsfw = p.NSFW,
-                            Upvotes = p.Upvotes,
-                            Downvotes = p.Downvotes,
-                            IsArchived = p.IsArchived,
-                            IsApproved = p.IsApproved,
-                            IsRemoved = p.IsRemoved,
-                            ReportCount = p.ReportCount,
-                            Score = p.Score,
-                            Kind = p.Kind,
-                            Created = p.Created,
-                            Subreddit = sr
-                        };
+                            int collected = 0;
 
-                        db.Posts.Add(post);
-                        childPb.Tick();
+                            // For each post in the subreddit
+                            await subreddit.GetPosts().ForEachAsync(p =>
+                            {
+                                // Get author user
+                                var author = CollectorCache.GetUser(_reddit, p.AuthorName).Result;
+                                if (author == null)
+                                    return;
 
-                        collected++;
-                        if (collected % 100 == 0)
-                            db.SaveChanges();
-                    });
-                    // ReSharper restore AccessToDisposedClosure
+                                // Create post model with the author
+                                var post = new Post
+                                {
+                                    PostId = p.Id,
+                                    Author = author,
+                                    Title = p.Title,
+                                    SelfText = p.SelfText,
+                                    CommentCount = p.CommentCount,
+                                    Url = p.Url?.OriginalString,
+                                    ThumbnailUrl = p.Thumbnail?.OriginalString,
+                                    Nsfw = p.NSFW,
+                                    Upvotes = p.Upvotes,
+                                    Downvotes = p.Downvotes,
+                                    IsArchived = p.IsArchived,
+                                    IsApproved = p.IsApproved,
+                                    IsRemoved = p.IsRemoved,
+                                    ReportCount = p.ReportCount,
+                                    Score = p.Score,
+                                    Kind = p.Kind,
+                                    Created = p.Created,
+                                    Subreddit = sr
+                                };
+
+                                // ReSharper disable AccessToDisposedClosure
+                                db.Posts.Add(post);
+                                childPb.Tick();
+
+                                collected++;
+                                if (collected % 100 == 0)
+                                    db.SaveChanges();
+                                // ReSharper restore AccessToDisposedClosure
+                            });
+
+                        }
+
+                        await db.SaveChangesAsync();
+                        pb.Tick();
+                    }
                 }
-
-                await db.SaveChangesAsync();
-                pb.Tick();
             }
         }
 
@@ -152,7 +121,7 @@ namespace Collector
                     ProgressBarOnBottom = true
                 }))
                 {
-                    var subreddits = await _reddits[0].SearchSubreddits("game").Select(sr => new Subreddit
+                    var subreddits = await _reddit.SearchSubreddits("game").Select(sr => new Subreddit
                     {
                         Title = sr.Title,
                         Name = sr.DisplayName,
@@ -168,14 +137,6 @@ namespace Collector
                     pb.Tick($"{subreddits.Count} subreddits collected!");
                 }
             }
-        }
-
-        public static IEnumerable<IEnumerable<T>> SplitList<T>(IEnumerable<T> list, int parts)
-        {
-            int i = 0;
-            return from item in list
-                   group item by i++ % parts into part
-                   select part.AsEnumerable();
         }
 
     }

@@ -7,15 +7,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="EFCore.BulkExtensions" Version="2.3.4" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="2.1.4">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="2.1.4" />
-    <PackageReference Include="RedditSharp" Version="2.0.0-CI00075" />
     <PackageReference Include="ShellProgressBar" Version="4.2.0" />
     <PackageReference Include="System.Interactive.Async" Version="3.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RedditSharp\RedditSharp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,9 +1,11 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Collector.Models;
 using RedditSharp;
+using ShellProgressBar;
 
 namespace Collector
 {
@@ -12,13 +14,9 @@ namespace Collector
 
         #region Fields
 
-        private static readonly SemaphoreSlim UsersSemaphore = new SemaphoreSlim(1, 1);
-
-        #endregion
-
-        #region Properties
-
-        public static Dictionary<string, User> Users { get; private set; } = new Dictionary<string, User>();
+        private static readonly SemaphoreSlim Semaphore = new SemaphoreSlim(1, 1);
+        private static Dictionary<string, User> _users = new Dictionary<string, User>();
+        private static readonly List<ProgressBarOptions> SpawnsOptions = new List<ProgressBarOptions>();
 
         #endregion
 
@@ -26,9 +24,9 @@ namespace Collector
 
         public static async Task<User> GetUser(Reddit reddit, string name)
         {
-            await UsersSemaphore.WaitAsync();
+            await Semaphore.WaitAsync();
 
-            if (!Users.ContainsKey(name))
+            if (!_users.ContainsKey(name))
             {
                 User user;
                 try
@@ -56,16 +54,39 @@ namespace Collector
                     user = null;
                 }
 
-                Users.Add(name, user);
+                _users.Add(name, user);
             }
 
-            UsersSemaphore.Release();
-            return Users[name];
+            Semaphore.Release();
+            return _users[name];
         }
 
         public static void LoadUsers(DatabaseContext db)
         {
-            Users = db.Users.ToDictionary(u => u.Name, u => u);
+            _users = db.Users.ToDictionary(u => u.Name, u => u);
+        }
+
+        public static ProgressBarOptions NewSpawnOptions()
+        {
+            Semaphore.Wait();
+
+            if (SpawnsOptions.Count == 6)
+            {
+                SpawnsOptions[0].CollapseWhenFinished = true;
+                SpawnsOptions.RemoveAt(0);
+            }
+
+            var spawnOption = new ProgressBarOptions
+            {
+                ForegroundColor = ConsoleColor.Green,
+                BackgroundColor = ConsoleColor.DarkGreen,
+                ProgressCharacter = '─',
+                CollapseWhenFinished = false
+            };
+
+            SpawnsOptions.Add(spawnOption);
+            Semaphore.Release();
+            return spawnOption;
         }
 
         #endregion
